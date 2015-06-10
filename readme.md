@@ -1,7 +1,10 @@
-# {{project}
+# Music folders renamer
 
 ## Overview
-TODO
+Useful for car audio, or to order music collections.
+Was written mostly for car audio
 
 ## Setup
-TODO
+use pip2
+mp3rnm run .
+THIS CAN BE DESTRUCTIVE!
