@@ -88,7 +88,7 @@ def setup_logging():
 
 def sort_by_folders(renames): 
     def sort_key(item): 
-        old_name, new_name = item
+        old_name, new_name, type_ = item
         s = old_name.split('/')
         return len(s)
 
@@ -131,7 +131,7 @@ def decide(dir):
     return artists,  albums
 
 
-def main(root):
+def analyze(root):
 
     renames = []
         
@@ -145,24 +145,31 @@ def main(root):
         if len(albums) > 1 and len(artists) == 1: 
             logger.info('сборничек %s', artists)
             new_name = u'{0}'.format(artists.keys()[0])
-            renames.append((dirpath, new_name))
+            renames.append((dirpath, new_name, 'collection'))
         elif len(artists) > 1 and len(albums) == 1: 
             logger.info('VA %s', artists)
             new_name = u'VA {0}'.format(albums.keys()[0])
-            renames.append((dirpath, new_name))
+            renames.append((dirpath, new_name, 'VA'))
         elif len(artists) == 1 and len(albums) == 1:
             new_name = u'{0} - {1}'.format(artists.keys()[0], albums.keys()[0])
-            renames.append((dirpath, new_name))
+            renames.append((dirpath, new_name, 'album'))
             logger.info('album %s - %s', artists.keys()[0].encode('utf-8'), albums.keys()[0].encode('utf-8'))
         else:
             logger.warning('no info %s %s %s', artists, albums, dirpath)
+            renames.append((dirpath, dirpath, 'folder'))
 
-    # sorting
+    return renames
+
+
+def main(root):
+    renames = analyze(root)
     renames = sort_by_folders(renames)
     
     print ' * ' * 3
         
-    for old, new in renames: 
+    for old, new, type_ in renames: 
+        if type_ == 'folder':
+            continue
         lang = transliterate.detect_language(new)
         if lang:
             new = transliterate.translit(new, reversed = True)
