@@ -1,10 +1,13 @@
+#!/usr/bin/env python2
 # _*_ coding: utf-8 _*_
 
-import mutagen
+import itertools
+import argparse
+import sys
+import re
+import shutil
 import os, glob
-
-from mutagen.mp3 import MP3
-from mutagen.easyid3 import EasyID3
+import os.path
 
 import logging
 from os import path
@@ -12,26 +15,11 @@ from collections import Counter
 
 from pprint import pprint
 
-import itertools
-import argparse
-import sys
+import mutagen
+import transliterate
 
-import os
-
-import re
-
-import shutil
-
-# sudo mount /dev/sdc1 /mnt/1 -o rw,umask=002,codepage=866,iocharset=utf8,gid=100 
-
-# сделать список что альбом а что нет
-# вложенные папки,  альбоы с вариус артистс
-# без имени
-# сборнички песен 
-# плохо читающиеся теги
-
-# как быть с папками в папках
-# переносим сначала альбомы те которые в папках
+# http://stackoverflow.com/questions/6309587/call-up-an-editor-vim-from-a-python-script
+# sudo mount /dev/sdb1 /mnt/1 -o rw,umask=002,codepage=866,iocharset=utf8,gid=100 
 
 logger = logging.getLogger('music')
 
@@ -40,6 +28,7 @@ def is_mp3(filename):
     _,  ext = os.path.splitext(filename)
     return ext.lower() == '.mp3'
 
+
 def list_mp3(dirname): 
     files = os.listdir(dirname)
     for filename in files: 
@@ -47,6 +36,64 @@ def list_mp3(dirname):
         if is_mp3(abs_filename): 
             print abs_filename
             yield abs_filename
+
+
+def alternative_names(filename):
+    yield filename
+    if os.path.isfile(filename):
+        base, ext = os.path.splitext(filename)
+        yield "{}(Duplicate){}".format(base, ext)
+        for i in itertools.count(1):
+            yield "{}(Duplicate {}){ext}".format(base, i, ext)
+    else:
+        yield "{}(Duplicate)".format(filename)
+        for i in itertools.count(1):
+            yield "{}(Duplicate {})".format(filename, i)
+
+
+def get_next_name(name):
+
+    for alt_name in alternative_names(name):
+        if not os.path.lexists(alt_name):
+            return alt_name
+
+
+def clean_shit(root): 
+    for (dirpath, dirnames, filenames) in os.walk(root): # todo
+        for filename in filenames: 
+            if not is_mp3(filename): 
+                filename = os.path.join(dirpath, filename)
+                print filename
+                os.remove(filename)
+
+
+def clean_folders(root): 
+    for (dirpath, dirnames, filenames) in os.walk(root): # todo
+        if not filenames and not dirnames: 
+            print dirpath
+            os.removedirs(dirpath)
+           
+
+def setup_logging(): 
+    
+    logger.setLevel(logging.DEBUG)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    ch.setFormatter(formatter)
+
+    logger.addHandler(ch)
+
+
+def sort_by_folders(renames): 
+    def sort_key(item): 
+        old_name, new_name = item
+        s = old_name.split('/')
+        return len(s)
+
+    sorted_renames = sorted(renames, key = sort_key, reverse=True) # to deal with nested folders
+    return sorted_renames
 
 
 # def sort_folders(dir):
@@ -67,47 +114,28 @@ def decide(dir):
     artists, albums = Counter(),  Counter()
     
     for filename in list_mp3(dir): 
-        audio = MP3(filename)
+        audio = mutagen.File(filename)
         try: 
             songtitle = audio["TIT2"]
             artist    = audio["TPE1"]
             album     = audio["TALB"]
             # assert len(album) == 1
             # assert len(artist) == 1
+
         except KeyError as ex: 
             logger.error('no id3 in %s %s', ex, filename)
         else: 
-            artists.update([artist[0]])
-            albums.update([album[0]])
+            artists.update([artist.text[0]])
+            albums.update([album.text[0]])
         
     return artists,  albums
 
 
-
-def sort_by_folders(renames): 
-    def sort_key(item): 
-        old_name, new_name = item
-        s = old_name.split('/')
-        return len(s)
-
-    sorted_renames = sorted(renames, key = sort_key, reverse=True) # to deal with nested folders
-    return sorted_renames
-
-def alternative_names(filename):
-    yield filename
-    base, ext = os.path.splitext(filename)
-    yield base + "(Duplicate)" + ext
-    for i in itertools.count(1):
-        yield base + "(Duplicate %i)" % i + ext
-
-
 def main(root):
-    c = itertools.count() # TODO: better
-    gen_id = c.next
 
     renames = []
         
-    for (dirpath, dirnames, _) in os.walk(root): # todo
+    for (dirpath, _, _) in os.walk(root): # todo
         if dirpath == root: 
             print 'ignoring root {0}', format(root)
             continue
@@ -135,19 +163,21 @@ def main(root):
     print ' * ' * 3
         
     for old, new in renames: 
+        lang = transliterate.detect_language(new)
+        if lang:
+            new = transliterate.translit(new, reversed = True)
+
         new =  cleaned_up_filename = re.sub(r"[\/\\\:\*\?\"\<\>\|]", "", new)
         new = new.encode('utf8', 'ignore')
+
+        new = os.path.join(root, new)
+        new = new.strip()
 
         if  os.path.abspath(old) == os.path.abspath(new): 
             print 'okay'
             continue
 
-        new = os.path.join(root, new)
-        new = new.strip()
-
-        target_name = next(alt_name
-                           for alt_name in alternative_names(new)
-                           if not os.path.exists(alt_name))
+        target_name = get_next_name(new)
         
         print old, '\t', new
         try:
@@ -159,58 +189,9 @@ def main(root):
             raise
 
 
-def clean_shit(root): 
-    for (dirpath, dirnames, filenames) in os.walk(root): # todo
-        for filename in filenames: 
-            if not is_mp3(filename): 
-                filename = os.path.join(dirpath, filename)
-                print filename
-                os.remove(filename)
+def run(argv = sys.argv): 
 
-def clean_folders(root): 
-    for (dirpath, dirnames, filenames) in os.walk(root): # todo
-        if not filenames and not dirnames: 
-            print dirpath
-            os.removedirs(dirpath)
-           
-def setup_logging(): 
-    
-    logger.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    
-    ch.setFormatter(formatter)
-
-    logger.addHandler(ch)
-
- 
-        
-use = """
-options: 
---dry-run - default
--f --force
-
-# this is actualy comands
---delete-dirs -D
---delete-non-music -M
---rewrite-existing
-
-mp3rnm /mnt/1 -fDM
-
---output-dir= - to just move things
-
-
-"""
-
-# http://stackoverflow.com/questions/6309587/call-up-an-editor-vim-from-a-python-script
-
-
-
-
-def run(argv=sys.argv): 
-
-    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser = argparse.ArgumentParser(description='')
     
 
     parser.add_argument('action', help='action', choices=['decide', 'sort', 'run', 'clean', 'clean_folders'])
@@ -226,15 +207,11 @@ def run(argv=sys.argv):
     
     process(args)
 
-# 1. call only decide. to folder and to tree
-# 2. show tree
-# 3. tag db api ? 
-
-
-import os.path
 
 def process(args):
     setup_logging()
+
+    # TODO: are you sure ?
 
     pwd = os.getcwd()
     source_directory = os.path.normpath(args.source_directory)
@@ -246,12 +223,4 @@ def process(args):
         clean_shit(source_directory)
     elif args.action == 'clean_folders': 
         clean_folders(source_directory)
-    # elif args.action == 'sort': 
-    #     sort_folders(source_directory)
 
-    # main(source_directory)
-
-# setup_logging()
-# main(root = '/mnt/1')
-# clean_shit(root = '/mnt/1')
-# clean_folders(root = '/mnt/1')
