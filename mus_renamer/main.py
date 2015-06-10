@@ -18,8 +18,13 @@ from pprint import pprint
 import mutagen
 import transliterate
 
+from itertools import groupby
+
+
 # http://stackoverflow.com/questions/6309587/call-up-an-editor-vim-from-a-python-script
 # sudo mount /dev/sdb1 /mnt/1 -o rw,umask=002,codepage=866,iocharset=utf8,gid=100 
+
+
 
 logger = logging.getLogger('music')
 
@@ -88,7 +93,7 @@ def setup_logging():
 
 def sort_by_folders(renames): 
     def sort_key(item): 
-        old_name, new_name, type_ = item
+        old_name, new_name, type_, _, _ = item
         s = old_name.split('/')
         return len(s)
 
@@ -133,7 +138,7 @@ def decide(dir):
 
 def analyze(root):
 
-    renames = []
+    data = []
         
     for (dirpath, _, _) in os.walk(root): # todo
         if dirpath == root: 
@@ -142,32 +147,27 @@ def analyze(root):
 
         artists, albums = decide(dirpath)
         
-        if len(albums) > 1 and len(artists) == 1: 
-            logger.info('сборничек %s', artists)
-            new_name = u'{0}'.format(artists.keys()[0])
-            renames.append((dirpath, new_name, 'collection'))
-        elif len(artists) > 1 and len(albums) == 1: 
-            logger.info('VA %s', artists)
-            new_name = u'VA {0}'.format(albums.keys()[0])
-            renames.append((dirpath, new_name, 'VA'))
-        elif len(artists) == 1 and len(albums) == 1:
+        if len(artists) == 1 and len(albums) == 1:
             new_name = u'{0} - {1}'.format(artists.keys()[0], albums.keys()[0])
-            renames.append((dirpath, new_name, 'album'))
-            logger.info('album %s - %s', artists.keys()[0].encode('utf-8'), albums.keys()[0].encode('utf-8'))
+            data.append((dirpath, new_name, 'album', artists.keys()[0], albums.keys()[0]))
+        elif len(artists) == 1 and len(albums) > 1 : 
+            new_name = u'{0}'.format(artists.keys()[0])
+            data.append((dirpath, new_name, 'collection', artists.keys()[0], albums.keys()[0]))
+        elif len(artists) > 1 and len(albums) == 1: 
+            new_name = u'VA {0}'.format(albums.keys()[0])
+            data.append((dirpath, new_name, 'VA', artists.keys()[0], albums.keys()[0]))
         else:
-            logger.warning('no info %s %s %s', artists, albums, dirpath)
-            renames.append((dirpath, dirpath, 'folder'))
+            data.append((dirpath, dirpath, 'folder', None, None))
 
-    return renames
+    return data
 
 
-def main(root):
-    renames = analyze(root)
+def move_to_root(root, renames):
     renames = sort_by_folders(renames)
     
     print ' * ' * 3
         
-    for old, new, type_ in renames: 
+    for old, new, type_, _, _ in renames: 
         if type_ == 'folder':
             continue
         lang = transliterate.detect_language(new)
@@ -194,6 +194,61 @@ def main(root):
             print u"'{}' - '{}'".format(repr(old), repr(new))
             import IPython; IPython.embed()
             raise
+
+
+def translit(new):
+    lang = transliterate.detect_language(new)
+    if lang:
+        new = transliterate.translit(new, reversed = True)
+    new = cleaned_up_filename = re.sub(r"[\/\\\:\*\?\"\<\>\|]", "", new)
+    new = new.strip()
+    return new
+
+
+# TODO: only if mode than 2
+# refactor: unify coping process
+
+def move_to_artist_folder(root, renames):
+
+    new_renames = []
+    y = filter(lambda x: x[2] == 'album', renames)
+    t = sorted(y, key = lambda x: (x[3], x[4]))
+    q = groupby(t, key = lambda x: x[3])
+
+    for key, cor in q:
+        key_t = translit(key)
+        artist_folder = os.path.join(root, key_t)
+        for old, new, type_, artist, album in cor:
+            album = translit(album)
+            new_path = os.path.join(artist_folder, album)
+            new_path = new_path.encode('utf8', 'ignore')
+            new_renames.append((old, new_path))
+
+    renames = sort_by_folders(renames)
+
+    for old, new in new_renames: 
+
+        if  os.path.abspath(old) == os.path.abspath(new): 
+            print 'okay'
+            continue
+
+        target_name = get_next_name(new)
+        
+        print old, '\t', new
+        try:
+            shutil.move(old, target_name)
+            # os.rename(old,  target_name)
+        except OSError as ex: 
+            print u"'{}' - '{}'".format(repr(old), repr(new))
+            import IPython; IPython.embed()
+            raise
+
+
+
+def main(root):
+    renames = analyze(root)
+    # move_to_root(root, renames)
+    move_to_artist_folder(root, renames)
 
 
 def run(argv = sys.argv): 
