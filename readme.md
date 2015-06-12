@@ -1,8 +1,34 @@
 # Music folders renamer
 
 ## Overview
-Useful for car audio, or to order music collections.
-Was written mostly for car audio
+Useful for a car audio, or to order music collections.
+Was written mostly for a car audio.
+
+### How it works
+Program manipulates on whole folder.
+* creates a list of artists and albums for each folder
+* if there are one artist and one album the program treat it as whole album
+* for all albums it moves it to the root folder and names it as {artist}-{album}.
+
+There is also function that move each artist in own folder like
+```
+/artist/
+  album1
+  album2
+```
+move_to_artist_folder but its not tested well for now.
+
+## Help
+```
+positional arguments:
+  folder               directory to process
+
+optional arguments:
+  -h, --help           show this help message and exit
+  --clean_folders, -c
+  --clean_non_mp3, -j
+  --dry_run, -n
+```
 
 ## Setup
 ```
