@@ -50,4 +50,4 @@ You can also use
 for deduplication
 
 or ```fatsort /dev/sdX1```
-for sort your folders alphabetical
+to sort your folders alphabetical
