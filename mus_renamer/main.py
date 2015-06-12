@@ -20,10 +20,10 @@ import transliterate
 
 from itertools import groupby
 
+from mus_renamer.utils import setup_logging, get_next_name, query_yes_no
 
 # http://stackoverflow.com/questions/6309587/call-up-an-editor-vim-from-a-python-script
 # sudo mount /dev/sdb1 /mnt/1 -o rw,umask=002,codepage=866,iocharset=utf8,gid=100 
-
 
 
 logger = logging.getLogger('music')
@@ -43,27 +43,7 @@ def list_mp3(dirname):
             yield abs_filename
 
 
-def alternative_names(filename):
-    yield filename
-    if os.path.isfile(filename):
-        base, ext = os.path.splitext(filename)
-        yield "{}(Duplicate){}".format(base, ext)
-        for i in itertools.count(1):
-            yield "{}(Duplicate {}){ext}".format(base, i, ext)
-    else:
-        yield "{}(Duplicate)".format(filename)
-        for i in itertools.count(1):
-            yield "{}(Duplicate {})".format(filename, i)
-
-
-def get_next_name(name):
-
-    for alt_name in alternative_names(name):
-        if not os.path.lexists(alt_name):
-            return alt_name
-
-
-def clean_shit(root): 
+def clean_garbage(root): 
     for (dirpath, dirnames, filenames) in os.walk(root): # todo
         for filename in filenames: 
             if not is_mp3(filename): 
@@ -77,39 +57,18 @@ def clean_folders(root):
         if not filenames and not dirnames: 
             print dirpath
             os.removedirs(dirpath)
-           
-
-def setup_logging(): 
-    
-    logger.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    
-    ch.setFormatter(formatter)
-
-    logger.addHandler(ch)
-
+        
 
 def sort_by_folders(renames): 
+    """to deal with nested folders"""
+
     def sort_key(item): 
         old_name, new_name, type_, _, _ = item
         s = old_name.split('/')
         return len(s)
 
-    sorted_renames = sorted(renames, key = sort_key, reverse=True) # to deal with nested folders
+    sorted_renames = sorted(renames, key = sort_key, reverse=True) 
     return sorted_renames
-
-
-# def sort_folders(dir):
-#     dirs = os.listdir(dir)
-#     for d in dirs:
-#         print d
-    
-#     dirs.sort()
-#     for i, d in enumerate(dirs):
-#         os.utime(d, ((1+i)*200,(1+i)*200))
-
 
 
 def decide(dir): 
@@ -162,7 +121,7 @@ def analyze(root):
     return data
 
 
-def move_to_root(root, renames):
+def move_to_root(root, renames, args):
     renames = sort_by_folders(renames)
     
     print ' * ' * 3
@@ -170,29 +129,27 @@ def move_to_root(root, renames):
     for old, new, type_, _, _ in renames: 
         if type_ == 'folder':
             continue
-        lang = transliterate.detect_language(new)
-        if lang:
-            new = transliterate.translit(new, reversed = True)
 
-        new =  cleaned_up_filename = re.sub(r"[\/\\\:\*\?\"\<\>\|]", "", new)
+        new = translit(new)
         new = new.encode('utf8', 'ignore')
 
         new = os.path.join(root, new)
-        new = new.strip()
 
         if  os.path.abspath(old) == os.path.abspath(new): 
-            print 'okay'
             continue
 
         target_name = get_next_name(new)
         
         print old, '\t', new
         try:
-            shutil.move(old, target_name)
+            if not args.dry_run:
+                shutil.move(old, target_name)
+            else:
+                print old, target_name
             # os.rename(old,  target_name)
         except OSError as ex: 
             print u"'{}' - '{}'".format(repr(old), repr(new))
-            import IPython; IPython.embed()
+            # import IPython; IPython.embed()
             raise
 
 
@@ -205,10 +162,10 @@ def translit(new):
     return new
 
 
-# TODO: only if mode than 2
+# TODO: only if more than 2
 # refactor: unify coping process
 
-def move_to_artist_folder(root, renames):
+def move_to_artist_folder(root, renames, args):
 
     new_renames = []
     y = filter(lambda x: x[2] == 'album', renames)
@@ -236,53 +193,47 @@ def move_to_artist_folder(root, renames):
         
         print old, '\t', new
         try:
-            shutil.move(old, target_name)
+            if not args.dry_run:
+                shutil.move(old, target_name)
+            else:
+                print old, target_name
             # os.rename(old,  target_name)
         except OSError as ex: 
             print u"'{}' - '{}'".format(repr(old), repr(new))
-            import IPython; IPython.embed()
+            # import IPython; IPython.embed()
             raise
 
 
-
-def main(root):
-    renames = analyze(root)
-    # move_to_root(root, renames)
-    move_to_artist_folder(root, renames)
-
-
 def run(argv = sys.argv): 
-
-    parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description='Arrange music folders by artist/album')
     
+    parser.add_argument('folder', help='directory to process')
 
-    parser.add_argument('action', help='action', choices=['decide', 'sort', 'run', 'clean', 'clean_folders'])
-    parser.add_argument('source_directory', help='directory to process')
-
-    # parser.add_argument('--all', '-a', dest='accumulate', action='store_const',
-    #                     const=sum, default=max, 
-    #                     help='sum the integers (default: find the max)')
-    
-    # http://docs.python.org/dev/library/argparse.html#the-add-argument-method
+    parser.add_argument('--clean_folders', '-c', action='store_true')
+    parser.add_argument('--clean_non_mp3', '-j', action='store_true')
+    parser.add_argument('--dry_run', '-n', action='store_true')
 
     args = parser.parse_args()
-    
-    process(args)
+
+    setup_logging(logger)
+
+    folder = os.path.normpath(args.folder)
+    abs_folder = os.path.abspath(folder)
+
+    if not query_yes_no("Are you sure you want it on '{}'? \nThis can destroy your data".format(abs_folder), default="no"):
+        print 'Bye'
+        return 
+
+    renames = analyze(folder)
+    move_to_root(folder, renames, args)
+
+    if args.clean_folders:
+        print 'cleaning empty folders...'
+        clean_folders(folder)
+    if args.clean_non_mp3:
+        print 'cleaning non mp3...'
+        clean_garbage(folder)
 
 
-def process(args):
-    setup_logging()
-
-    # TODO: are you sure ?
-
-    pwd = os.getcwd()
-    source_directory = os.path.normpath(args.source_directory)
-    if args.action == 'decide': 
-        print decide(source_directory)
-    elif args.action == 'run': 
-        main(source_directory)
-    elif args.action == 'clean': 
-        clean_shit(source_directory)
-    elif args.action == 'clean_folders': 
-        clean_folders(source_directory)
-
+if __name__ == "__main__":
+    run(sys.argv)
