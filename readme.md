@@ -5,17 +5,14 @@ Useful for car audio, or to order music collections.
 Was written mostly for car audio
 
 ## Setup
-```git clone git@github.com:enomado/mus_renamer.git
-
-cd mus_renamer
-
-pip2 isntall -e .```
+  git clone git@github.com:enomado/mus_renamer.git
+  cd mus_renamer
+  pip2 isntall -e .
 
 ## Run
 THIS CAN BE DESTRUCTIVE!
-```cd *Your flash drive folder*
-
-mp3rnm .```
+  cd *Your flash drive folder*
+  mp3rnm .
 
 ## Some other tools
 You can also use 
