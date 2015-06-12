@@ -6,12 +6,15 @@ Was written mostly for car audio
 
 ## Setup
 ```git clone git@github.com:enomado/mus_renamer.git
+
 cd mus_renamer
+
 pip2 isntall -e .```
 
 ## Run
 THIS CAN BE DESTRUCTIVE!
 ```cd *Your flash drive folder*
+
 mp3rnm .```
 
 ## Some other tools
