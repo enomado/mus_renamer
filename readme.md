@@ -10,13 +10,13 @@ Program manipulates on whole folder.
 * if there are one artist and one album the program treat it as whole album
 * for all albums it moves it to the root folder and names it as {artist}-{album}.
 
-There is also function that move each artist in own folder like
+There is also function ```move_to_artist_folder``` that move each artist in own folder like
 ```
 /artist/
   album1
   album2
 ```
-move_to_artist_folder but its not tested well for now.
+ but its not tested well for now.
 
 ## Help
 ```
