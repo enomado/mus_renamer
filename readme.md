@@ -45,6 +45,7 @@ mp3rnm .
 ```
 
 ## Some other tools
+```sudo mount /dev/sdb1 /mnt/1 -o rw,umask=002,codepage=866,iocharset=utf8,gid=100 ```
 You can also use 
 ```duff -re0  . | xargs -0 rm ```
 for deduplication
