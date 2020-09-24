@@ -1,29 +1,32 @@
 #!/usr/bin/env python2
 # _*_ coding: utf-8 _*_
 
-import itertools
 import argparse
-import sys
+from collections import Counter
+from enum import Enum
+import glob
+import itertools
+from itertools import groupby
+import logging
+import os
+from os import path
+import os.path
+from pathlib import Path
+from pprint import pprint
+from pprint import pprint
 import re
 import shutil
-import os, glob
-import os.path
+import sys
+from typing import List, Literal, Union
 
-import logging
-from os import path
-from collections import Counter
-
-from pprint import pprint
-
+import chardet
+import eyed3
 import mutagen
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import ID3
 import transliterate
 
-from itertools import groupby
-
-from mus_renamer.utils import setup_logging, get_next_name, query_yes_no
-
-
-from pathlib import Path
+from mus_renamer.utils import get_next_name, query_yes_no, setup_logging
 
 # http://stackoverflow.com/questions/6309587/call-up-an-editor-vim-from-a-python-script
 # sudo mount /dev/sdb1 /mnt/1 -o rw,umask=002,codepage=866,iocharset=utf8,gid=100
@@ -62,33 +65,61 @@ def clean_folders(root: Path):
             os.removedirs(dirpath)
 
 
-def sort_by_folders(renames):
+class RenameAction(Enum):
+    COLLECTION = 1
+    ALBUM = 2
+    VA = 3
+    FOLDER = 4
+
+
+class Rename:
+
+    dirpath: Path
+    new_path: str
+    action: RenameAction
+    artists: List[str]
+    albums: List[str]
+    years: List[str]
+
+    def __init__(
+        self,
+        *,
+        dirpath: Path,
+        new_path: str,  # потому что список папок по окончанию линейный
+        action: RenameAction,
+        artists: List[str],
+        albums: List[str],
+        years: List[str],
+    ):
+        self.dirpath = dirpath
+        self.new_path = new_path
+        self.action = action
+        self.artists = artists
+        self.albums = albums
+        self.years = years
+
+
+def sort_by_folders(renames: List[Rename]):
     """to deal with nested folders"""
 
-    def sort_key(item):
-        old_name, new_name, type_, _, _ = item
+    def sort_key(item: Rename):
+        # old_name, new_name, type_, _, _ = item
 
-        s = list(old_name.parents)
+        s = list(item.dirpath.parents)
         return len(s)
 
     sorted_renames = sorted(renames, key=sort_key, reverse=True)
     return sorted_renames
 
 
-import eyed3
-
 # import id3reader
 
-import chardet
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3
 
-
-def decide(dir):
+def decide(dir: Path):
     """
     returns list of artists and albums in folder
     """
-    artists, albums = Counter(), Counter()
+    artists, albums, years = Counter(), Counter(), Counter()
 
     for filename in list_mp3(dir):
         # audio = mutagen.File(filename)
@@ -97,9 +128,24 @@ def decide(dir):
 
         # audiofile = id3reader.Reader(filename)
         try:
+
+            # import IPython
+            # IPython.embed()
+
             # songtitle = audiofile.tag.title
-            artist = audiofile.tag.artist
-            album = audiofile.tag.album
+
+            artist = "unknown"
+            album = "unknown"
+            year = "unknown"
+
+            if maybe_tag := audiofile.tag:
+
+                artist = maybe_tag.artist
+
+                album = audiofile.tag.album
+
+                if maybe_date := audiofile.tag.recording_date:
+                    year = maybe_date.year
             # assert len(album) == 1
             # assert len(artist) == 1
 
@@ -116,7 +162,7 @@ def decide(dir):
             # IPython.embed()
             # artist = audio["title"]
 
-            print("bla bla", artist, album)
+            print("bla bla", artist, album, year)
 
             # result = chardet.detect(rawdata)
 
@@ -125,13 +171,14 @@ def decide(dir):
         else:
             artists.update([artist])
             albums.update([album])
+            years.update([year])
 
-    return artists, albums
+    return artists, albums, years
 
 
-def analyze(root: Path):
+def analyze(root: Path) -> List[Rename]:
 
-    data = []
+    data: List[Rename] = []
 
     for (dirpath_raw, _, _) in os.walk(root):  # todo
 
@@ -141,66 +188,108 @@ def analyze(root: Path):
             print(f"ignoring root {root}")
             continue
 
-        artists, albums = decide(dirpath)
+        artists, albums, years = decide(dirpath)
 
         artists = list(artists.keys())
         albums = list(albums.keys())
+        years = list(years.keys())
 
         if len(artists) == 1 and len(albums) == 1:
 
-            # import IPython
-            # IPython.embed()
+            new_name = f"{artists[0]} - {years[0]} ({albums[0]})"
+            data.append(
+                Rename(
+                    dirpath=dirpath,
+                    new_path=new_name,
+                    action=RenameAction.ALBUM,
+                    albums=albums[0],
+                    artists=artists[0],
+                    years=years[0],
+                )
+            )
 
-            new_name = f"{artists[0]} - {albums[0]}"
-            data.append((dirpath, new_name, "album", artists[0], albums[0]))
         elif len(artists) == 1 and len(albums) > 1:
-            new_name = "{0}".format(artists[0])
-            data.append((dirpath, new_name, "collection", artists[0], albums[0]))
+            new_name = f"{artists[0]} - {years[0]}"
+
+            data.append(
+                Rename(
+                    dirpath=dirpath,
+                    new_path=new_name,
+                    action=RenameAction.COLLECTION,
+                    albums=albums[0],
+                    artists=artists[0],
+                    years=years[0],
+                )
+            )
+
         elif len(artists) > 1 and len(albums) == 1:
             new_name = "VA {0}".format(albums[0])
-            data.append((dirpath, new_name, "VA", artists[0], albums[0]))
+
+            data.append(
+                Rename(
+                    dirpath=dirpath,
+                    new_path=new_name,
+                    action=RenameAction.VA,
+                    albums=albums[0],
+                    artists=artists[0],
+                    years=years[0],
+                )
+            )
+
         else:
-            data.append((dirpath, dirpath, "folder", None, None))
+
+            print(f"warning: folder {dirpath}")
+
+            data.append(
+                Rename(
+                    dirpath=dirpath,
+                    new_path=dirpath.name,
+                    action=RenameAction.FOLDER,
+                    albums=[],
+                    artists=[],
+                    years=[],
+                )
+            )
 
     return data
 
 
-def move_to_root(root: Path, renames, args):
+def move_to_root(root: Path, renames: List[Rename], args):
     renames = sort_by_folders(renames)
 
     print(" * " * 3)
 
     for current_rename in renames:
 
-        old, new, type_, _, _ = current_rename
+        # old, new, type_, _, _ = current_rename
 
         print(current_rename)
 
-        if type_ == "folder":
+        if current_rename.action == RenameAction.FOLDER:
             continue
 
-        new = translit(new)
+        new_name = translit(current_rename.new_path)
         # new = new.encode("utf8", "ignore")
 
-        new = root / new
+        new = root / new_name
 
-        if os.path.abspath(old) == os.path.abspath(new):
+        if current_rename.dirpath == new:
             continue
 
-        target_name = get_next_name(new)
+        target_name = get_next_name(root, new)
 
-        print("moving", old, "\t", new)
+        print("moving", current_rename.dirpath, "\t", new)
         try:
             if not args.dry_run:
-                print("dfdfd", str(old), str(target_name))
+                print("dfdfd", str(current_rename.dirpath), str(target_name))
                 # shutil.move(str(old), str(target_name))
-                os.rename(str(old), str(target_name))
+                os.rename(str(current_rename.dirpath), str(target_name))
                 # old.rename(target_name)
             else:
-                print(old, target_name)
+                print(current_rename.dirpath, target_name)
             # os.rename(old,  target_name)
         except OSError as ex:
-            print("'{}' - '{}'".format(repr(old), repr(new)))
+            print("'{}' - '{}'".format(repr(current_rename.dirpath), repr(new)))
             # import IPython; IPython.embed()
             raise
 
@@ -218,7 +307,7 @@ def translit(new):
 # refactor: unify coping process
 
 
-def move_to_artist_folder(root, renames, args):
+def move_to_artist_folder(root: Path, renames: List[Rename], args):
 
     new_renames = []
     y = filter(lambda x: x[2] == "album", renames)
@@ -242,7 +331,7 @@ def move_to_artist_folder(root, renames, args):
             print("okay")
             continue
 
-        target_name = get_next_name(new)
+        target_name = get_next_name(root, new)
 
         print(old, "\t", new)
         try:
@@ -255,9 +344,6 @@ def move_to_artist_folder(root, renames, args):
             print("'{}' - '{}'".format(repr(old), repr(new)))
             # import IPython; IPython.embed()
             raise
-
-
-from pprint import pprint
 
 
 def run(argv=sys.argv):

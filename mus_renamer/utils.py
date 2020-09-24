@@ -8,33 +8,33 @@ import sys
 from itertools import groupby
 import itertools
 
-from typing import Generator
+from typing import Generator, Iterable
 
 
 from pathlib import Path
 
 
-def alternative_names(filename: Path) -> Generator[str, None, None]:
+def alternative_names(filename: Path) -> Iterable[str]:
     yield filename.name
     # if os.path.isfile(filename):
     if filename.is_file():
-        yield f"{filename.stem}(Duplicate){filename.suffix}"
+        yield f"{filename.stem}(copy){filename.suffix}"
 
         for i in itertools.count(1):
-            yield f"{filename.stem}(Duplicate {i}){filename.suffix}"
+            yield f"{filename.stem}(copy {i}){filename.suffix}"
     else:
-        yield f"{filename.name}(Duplicate)"
+        yield f"{filename.name}(copy)"
         for i in itertools.count(1):
-            yield f"{filename.name}(Duplicate {i})"
+            yield f"{filename.name}(copy {i})"
 
 
 from pathlib import Path
 
 
-def get_next_name(name: Path) -> Path:
+def get_next_name(root: Path, name: Path) -> Path:
     for alt_name in alternative_names(name):
 
-        full_path = name.parent / alt_name
+        full_path = root / alt_name
 
         if not full_path.exists():
             return full_path
