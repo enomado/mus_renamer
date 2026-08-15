@@ -1,0 +1,18 @@
+[package]
+name = "mus_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Domain core of mus_renamer: tag reading, folder classification, name building, rename planning"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+walkdir = { workspace = true }
+lofty = "0.22"
+encoding_rs = "0.8"
+
+[dev-dependencies]
+tempfile = { workspace = true }

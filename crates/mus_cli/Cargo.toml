@@ -1,0 +1,24 @@
+[package]
+name = "mus_cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command line interface of mus_renamer"
+
+[[bin]]
+name = "mp3rnm"
+path = "src/main.rs"
+
+[dependencies]
+mus_core = { workspace = true }
+mus_fs = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+toml = "0.9"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+walkdir = { workspace = true }
